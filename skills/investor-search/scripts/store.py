@@ -51,7 +51,8 @@ FILES = {
     "sources.csv": ["id", "field", "rung", "url"],
     "investors-pending.csv": ["name", "reason", "note", "first_seen", "source_url"],
     "investors-rejected.csv": ["name", "reason", "evidence", "checked", "source_url"],
-    "rounds.csv": ["round", "query", "surface", "offered", "survived", "dry_streak", "fetch_failed"],
+    "rounds.csv": ["round", "query", "surface", "offered", "survived", "dry_streak", "fetch_failed",
+                   "at"],
 }
 BOM_FILES = {"investors.csv"}
 LEGAL = {"gmbh", "ag", "kg", "og", "mbh", "co", "ltd", "llc", "inc", "sa", "sarl", "bv", "nv",
@@ -223,6 +224,19 @@ def gates(folder, pending, rounds, state):
             "budget_set_by_user": bool(budget), "stop_allowed": allowed, "stop_reason": reason}
 
 
+def pace(rounds):
+    """Median minutes between consecutive logged rounds (gaps over 2 hours are breaks)."""
+    t = []
+    for r in rounds:
+        try:
+            t.append(dt.datetime.strptime(r.get("at", ""), "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            t.append(None)
+    gaps = sorted((b - a).total_seconds() / 60 for a, b in zip(t, t[1:])
+                  if a and b and 0 < (b - a).total_seconds() < 7200)
+    return round(gaps[len(gaps) // 2], 1) if gaps else None
+
+
 def status(folder, market):
     inv = read_rows(folder / "investors.csv")
     rounds = read_rows(folder / "rounds.csv")
@@ -238,6 +252,8 @@ def status(folder, market):
         "rounds": len(rounds), "dry_streak": int(rounds[-1]["dry_streak"]) if rounds else 0,
         **gates(folder, len(read_rows(folder / "investors-pending.csv")), rounds, run_state(folder)),
         "next_id": f"f-{(max(ids) + 1 if ids else 1):03d}",
+        "minutes_per_round": pace(rounds),
+        "empty_rounds_still_needed": max(0, DRY_ROUNDS - (int(rounds[-1]["dry_streak"]) if rounds else 0)),
         "newest_check": newest, "newest_check_age_days": age,
         "held_domains": sorted({domain(r.get("website")) for r in inv if r.get("website")}),
         "held_names": [r["name"] for r in inv],
@@ -304,6 +320,10 @@ def cmd_add(a):
         rej = read_rows(folder / "investors-rejected.csv")
         rnd = read_rows(folder / "rounds.csv")
         before = {k: len(v) for k, v in (("inv", inv), ("src", src), ("rej", rej), ("rnd", rnd))}
+        for r in inv:  # a placeholder on file counts as blank
+            for c in INVESTOR_COLS[2:]:
+                if str(r.get(c, "")).strip().lower() in PLACEHOLDERS:
+                    r[c] = ""
         by_domain = {domain(r.get("website")): r["id"] for r in inv if r.get("website")}
         by_key = {fold(r["name"]): r for r in inv}
         rej_keys = {fold(r["name"]) for r in rej} | {domain(r.get("source_url")) for r in rej}
@@ -324,7 +344,7 @@ def cmd_add(a):
             report["rejected_added"] += 1
             rej_keys |= {k, domain(x.get("source_url") or x.get("website"))}
         for r in batch.get("investors", []):
-            r = {c: ("" if isinstance(v, str) and v.strip().lower() in PLACEHOLDERS else v)
+            r = {c: ("" if c != "name" and isinstance(v, str) and v.strip().lower() in PLACEHOLDERS else v)
                  for c, v in r.items()}
             name = (r.get("name") or "").strip()
             if not name:
@@ -403,6 +423,7 @@ def cmd_add(a):
             rnd.append({"round": n, "query": r.get("query", ""), "surface": r.get("surface", ""),
                         "offered": r.get("offered", ""), "survived": surv,
                         "fetch_failed": "true" if r.get("fetch_failed") else "",
+                        "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "dry_streak": 0 if surv else prev + 1})
             report["round"] = n
             report["dry_streak"] = rnd[-1]["dry_streak"]
