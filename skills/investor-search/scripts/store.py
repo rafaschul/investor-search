@@ -311,6 +311,10 @@ def cmd_add(a):
     batch = json.load(sys.stdin)
     if not (folder / "investors.csv").exists():
         sys.exit("run init first")
+    if ";" in str((batch.get("round") or {}).get("query", "")):
+        print(json.dumps({"refused": "one round is ONE query on ONE surface - nothing was written; "
+                                     "send each query as its own add"}))
+        sys.exit(5)
     report = {"added": [], "already_held": [], "fold_conflicts": [], "pending_added": [],
               "pending_resolved": [], "rejected_added": 0, "sources_added": 0, "errors": []}
     with locked(folder):
@@ -414,9 +418,6 @@ def cmd_add(a):
             report["pending_added"].append(p["name"])
         if batch.get("round"):
             r = batch["round"]
-            if ";" in str(r.get("query", "")):
-                report.setdefault("warnings", []).append(
-                    "one round is ONE query on ONE surface - log several queries as several rounds")
             n = len(rnd) + 1
             prev = int(rnd[-1]["dry_streak"]) if rnd else 0
             surv = survived if r.get("survived") in (None, "") else int(r["survived"])
