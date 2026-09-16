@@ -97,7 +97,18 @@ one already decided. The ledger makes a run
 cheaper. It never makes one finished.
 
 **Say `continue Austria` (any market) to carry on** — the next run reads the files, skips
-every firm already decided, and works the pending queue first.
+every firm already decided, and works the pending queue first. A run that was cut off
+(model limit, crash) resumes where it stopped; its empty rounds still count.
+
+**For a run that must finish, give it as a goal** — Hermes then keeps taking turns until the
+skill's stop rule is met, instead of ending after a few rounds:
+
+```
+/goal Use investor-search to continue Austria. Done only when store.py finish exits 0; then post the one xlsx.
+```
+
+In Slack the command is `/hermes goal …`. A goal is capped at 20 turns by default
+(`goals.max_turns` in `config.yaml`) and uses model quota for every turn.
 
 **Every run starts the same way, before any search:** it reads what is on file, writes
 `index.md` and reads it back, creates any missing file with its header, and says in its first
