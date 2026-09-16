@@ -423,3 +423,22 @@ Three models on the same prompt in a shared Slack channel; the Codex run complet
   rounds; a market from another root was copied into the channel's `index.md`; the budget
   was asked for as a question instead of stated.
 
+## Test 7 — Hermes Agent, Austria, through Slack (1.1.0)
+
+Same channel, Codex model, request *find more family offices in Austria*.
+
+- **Worked:** the nine firms on file were kept; new ids started at `f-010`; no firm was
+  repeated; two advisers went to the rejected file; `init` refused two runs whose scope was
+  phrased differently from the one on file; no budget was asked for; one `.xlsx` with five
+  sheets and 80 citations was produced.
+- **Failed — the reason 1.1.1 exists:** the model ended its turn after four rounds with
+  `dry_streak` 0 and asked before posting the file, although the stop rule was not met.
+  **`finish` can refuse a stop, but it cannot make a model take another turn** — that needs
+  Hermes' `/goal`. Also: "find more" re-stated the scope instead of using the stored one;
+  three queries were logged as one round; batch files were written into the working
+  directory; a firm with *unclear* evidence was marked as a match; a missing website was
+  stored as `—`. 1.1.1 moves the last three into `store.py`.
+- **Not the skill, but found here:** Hermes with the `local` terminal backend can read the
+  whole home directory; a request in a new thread listed private files from `~/Downloads`
+  in the channel. Run a shared bot in a container backend.
+
