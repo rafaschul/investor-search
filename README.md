@@ -177,7 +177,7 @@ So the claim is now the narrower true one: **exhausted on the surfaces named**, 
 them, so a reader who knows a further surface can say so.
 
 **Be clear about what is proven.** Gates 1 to 3 were written after that test and **have not
-themselves been field-tested.** Every run behind this package stopped on budget, not
+themselves been proven in a run.** Every run behind this package stopped on budget, not
 on exhaustion. What this skill reliably produces today is a **defensible partial list** —
 sourced, deduplicated, adviser-filtered, and explicit about what it did not reach. The
 completeness claim is a design with an argument behind it, not a measured result.
@@ -221,24 +221,23 @@ skills/investor-search/
   references/lists.md                  legal forms, generic tails, place words, type words
   references/why.md                    what was measured and what broke, rule by rule
   references/environment.md            where files go, the ledger format, delivering a file to the user
-  references/field-tests.md            what the field tests found, including the verdicts against it
   scripts/store.py                     the only writer of the memory files — append-only (Python 3, stdlib)
 ```
 
-**The memory is protected by code, not only by rules.** A Hermes field test showed a second
-run rewriting the first run's files from memory. Since 1.1.0 every write goes through
+**The memory is protected by code, not only by rules.** A second run once rewrote the
+first run's files from memory. Since 1.1.0 every write goes through
 `scripts/store.py`, which never removes a row, never renumbers an id, skips firms already held
 or rejected, and counts the empty rounds itself. It needs `python3` and Hermes' terminal
 tool.
 
-**Five reference files in the skill, and the split is deliberate.** An earlier single file put every rule next to
-its justification, and a field test found the predictable result: *"every defect I found is a
+**Four reference files in the skill, and the split is deliberate.** An earlier single file put every rule next to
+its justification, and a review found the predictable result: *"every defect I found is a
 rule that exists but is unreachable at the moment of decision."* The reasoning is still
 shipped — it is just not in the way.
 
-**Be aware of one number before you read `SKILL.md`:** it is about 45KB, which is the size the
-Singapore tester was looking at when they said *"at 45KB the justifications win."* The split
-moved that file's justification out and then five field tests put new rules in, and it arrived
+**Be aware of one number before you read `SKILL.md`:** it is about 45KB, which is the size a
+reviewer was looking at when they said *"at 45KB the justifications win."* The split
+moved that file's justification out and then later runs put new rules in, and it arrived
 back at the same figure by a different route. What is in it now is mostly rules — but nobody
 has measured the ratio, so this package does not claim one, and the reachability of a rule at
 the moment it is needed remains the thing to check first if you extend this.
@@ -246,7 +245,7 @@ the moment it is needed remains the thing to check first if you extend this.
 ## Where the rules come from
 
 The core came from a production investor-research system run over several months and
-hundreds of pages. It was then field-tested five times as a standalone skill, and each test
+hundreds of pages. It was then run in five markets as a standalone skill, and each run
 rewrote it:
 
 | market | what it found |
@@ -256,12 +255,6 @@ rewrote it:
 | **Singapore** | The fold rewrite vindicated — one key collided five ways and none were merged. 14 more defects, and the finding that the file had grown too long to follow |
 | **Estonia** | The stopping rule fired for the first time — **and was wrong, falsified inside the same run.** Legal forms written in front of the name. Rebrands invisible to every rule there is |
 | **Latvia** | Run under the current rules. **Job 0 barely fired** — 16 of 31 association members went undecided because the rules forbid judging from a name and the budget went on searching wider. One firm ran three funds; another listed two headquarters |
-
-[`field-tests.md`](skills/investor-search/references/field-tests.md) is a written account of
-all five runs, including every verdict that went against the skill. **No company is named in it.** The tests made negative judgements about
-real firms — that one sells services rather than investing, that another's citation could not
-be retrieved — which was right for deciding what to build and wrong to publish under a
-company's name. The raw transcripts are working documents and are not published.
 
 **No sample output ships with this package, and that is deliberate.** Five runs produced real
 files, and each one was a snapshot of the rules as they stood on the day — which made every
