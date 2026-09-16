@@ -345,10 +345,12 @@ def cmd_add(a):
         rej = read_rows(folder / "investors-rejected.csv")
         rnd = read_rows(folder / "rounds.csv")
         before = {k: len(v) for k, v in (("inv", inv), ("src", src), ("rej", rej), ("rnd", rnd))}
-        for r in inv:  # a placeholder on file counts as blank
+        for r in inv:  # a placeholder on file counts as blank; unclear evidence is never a match
             for c in INVESTOR_COLS[2:]:
                 if str(r.get(c, "")).strip().lower() in PLACEHOLDERS:
                     r[c] = ""
+            if r.get("investor_evidence") in ("", "unclear") and r.get("matches_request") == "yes":
+                r["matches_request"] = ""
         by_domain = {domain(r.get("website")): r["id"] for r in inv if r.get("website")}
         by_key = {fold(r["name"]): r for r in inv}
         rej_keys = {fold(r["name"]) for r in rej} | {domain(r.get("source_url")) for r in rej}
