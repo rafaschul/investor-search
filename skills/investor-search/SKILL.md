@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.2
+version: 1.1.3
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -543,7 +543,7 @@ answer is 46. If 12 can be sourced, the answer is 12 — and you say so:
 
 **One query, and the verification of what it returned.** Define it or the streak counter
 measures nothing. **Three queries are three rounds** — never join them with `;` into one
-line (`store.py add` warns when you do).
+line (`store.py add` refuses the batch with exit 5 and writes nothing; resend each query).
 
 - A round must be a **genuine attempt to find new names** — never a query narrowed to fail.
 - **A directory yielding more than 10 names is not one round.** The first 10 close it; the
