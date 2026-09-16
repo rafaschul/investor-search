@@ -63,6 +63,9 @@ MIN_SURFACES = 3
 BACKSTOP = 60
 
 
+PLACEHOLDERS = {"—", "–", "-", "n/a", "na", "none", "null", "not found", "not available"}
+
+
 def fold(name):
     s = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
     words = [w for w in re.split(r"[^a-z0-9]+", s) if w]
@@ -264,8 +267,15 @@ def cmd_init(a):
             print(json.dumps({"scope_mismatch": True, "on_file": scope, "asked": a.scope}))
             sys.exit(3)
         rebuild(a.root, folder, market, scope)
-        state = {"started_at_round": len(read_rows(folder / "rounds.csv")), "started": TODAY,
-                 "budget": a.budget or None, "user_raised_backstop": bool(a.budget and a.budget > BACKSTOP)}
+        prev = run_state(folder)
+        resumed = bool(prev) and not prev.get("finished") and "started_at_round" in prev
+        state = {"started_at_round": int(prev["started_at_round"]) if resumed
+                 else len(read_rows(folder / "rounds.csv")),
+                 "started": prev.get("started", TODAY) if resumed else TODAY,
+                 "budget": a.budget or (prev.get("budget") if resumed else None),
+                 "user_raised_backstop": bool(a.budget and a.budget > BACKSTOP)
+                 or bool(resumed and prev.get("user_raised_backstop")),
+                 "finished": False}
         (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
         st = status(folder, market)
         st["created"] = created
@@ -314,6 +324,8 @@ def cmd_add(a):
             report["rejected_added"] += 1
             rej_keys |= {k, domain(x.get("source_url") or x.get("website"))}
         for r in batch.get("investors", []):
+            r = {c: ("" if isinstance(v, str) and v.strip().lower() in PLACEHOLDERS else v)
+                 for c, v in r.items()}
             name = (r.get("name") or "").strip()
             if not name:
                 report["errors"].append("investor without a name skipped")
@@ -335,6 +347,10 @@ def cmd_add(a):
                 refmap[r.get("ref") or name] = held
                 continue
             row = {c: r.get(c, "") for c in INVESTOR_COLS}
+            if row.get("investor_evidence") in ("", "unclear") and row.get("matches_request") == "yes":
+                row["matches_request"] = ""
+                report.setdefault("warnings", []).append(
+                    f"{name}: matches_request left blank - investor evidence is unclear")
             if k in by_key and d:
                 row["fold_conflict"] = row.get("fold_conflict") or by_key[k]["name"]
                 report["fold_conflicts"].append(f"{name} vs {by_key[k]['name']}")
@@ -378,6 +394,9 @@ def cmd_add(a):
             report["pending_added"].append(p["name"])
         if batch.get("round"):
             r = batch["round"]
+            if ";" in str(r.get("query", "")):
+                report.setdefault("warnings", []).append(
+                    "one round is ONE query on ONE surface - log several queries as several rounds")
             n = len(rnd) + 1
             prev = int(rnd[-1]["dry_streak"]) if rnd else 0
             surv = survived if r.get("survived") in (None, "") else int(r["survived"])
@@ -437,10 +456,14 @@ def cmd_finish(a):
             "no_website": [r["name"] for r in inv if not r.get("website")],
             "headquarters_partial": [r["name"] for r in inv if r.get("headquarters_partial") == "yes"],
             "no_person": [r["name"] for r in inv if not r.get("person")],
+            "evidence_unclear": [r["name"] for r in inv if r.get("investor_evidence") in ("", "unclear")],
         },
         "citations": len(read_rows(folder / "sources.csv")),
         "folder": st["folder"],
     }
+    state = run_state(folder)
+    state["finished"] = True
+    (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=1))
 
 
@@ -607,6 +630,9 @@ def cmd_import(a):
     if rnd and not read_rows(folder / "rounds.csv"):
         write_rows(folder / "rounds.csv", FILES["rounds.csv"], rnd)
         done.append("rounds.csv")
+        # imported rounds are history, not this run
+        state = dict(run_state(folder), started_at_round=len(rnd), finished=False)
+        (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
     rebuild(a.root, folder, market, scope_of(folder))
     print(json.dumps({"imported": done, **status(folder, market)}, ensure_ascii=False, indent=1))
 
