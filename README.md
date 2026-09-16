@@ -75,19 +75,29 @@ Run it again next month and it finds that folder, tells you how old the newest c
 continues instead of repeating. Ask for a market it has never seen and it says that too —
 because silence reads as continuity.
 
-**You always get `investors.csv` as a file.** It does not guess whether it can keep a folder;
-it tries in the first minute. If it cannot, you hear it then rather than after forty rounds,
-and the files are handed to you instead. In Slack, Telegram, WhatsApp, Discord, Signal or
-email (Hermes' messaging gateway) `investors.csv` arrives as a file attachment; in the Hermes
-terminal you get the full path. Keep the files and upload them next time. Only a session with
-no way to send a file at all gets the CSV as text in the chat.
+**You get one file: `<market>-investors.xlsx`.** The first sheet is the firm list with a
+`source_links` column; the other sheets hold the evidence, the open queue, the round history
+and the ledger. In Slack, Telegram, WhatsApp, Discord, Signal or email (Hermes' messaging
+gateway) it arrives as an attachment; in the Hermes terminal you get the full path.
+
+**It searches until the results stop** — six rounds in a row with no new firm, across
+different kinds of source — and never asks you for a budget. Say "use 10 rounds" if you want
+a quick scan. Sixty rounds is the ceiling unless you ask for more.
+
+It does not guess whether it can keep a folder; it tries in the first minute. If it cannot,
+you hear it then, and the same Excel file becomes the memory: upload it next time and the
+run continues from it. Only a session with no way to send a file at all gets CSV text in the
+chat.
 
 **What it will not do in that case is claim a market is finished.** The completeness check
 reads the pending queue and the round log; with no folder there is nothing it can read back,
 so the answer is PARTIAL and says so. The files it hands you include a **ledger** — one line
-per firm; upload the files (or paste the ledger) next time and the next run skips what this
+per firm; upload the file (or paste the ledger) next time and the next run skips what this
 one already decided. The ledger makes a run
 cheaper. It never makes one finished.
+
+**Say `continue Austria` (any market) to carry on** — the next run reads the files, skips
+every firm already decided, and works the pending queue first.
 
 **Every run starts the same way, before any search:** it reads what is on file, writes
 `index.md` and reads it back, creates any missing file with its header, and says in its first
@@ -163,6 +173,9 @@ completeness claim is a design with an argument behind it, not a measured result
 
 ## What you get
 
+**Delivered:** one `<market>-investors.xlsx`. **Kept in the folder** (the memory, never
+sent):
+
 | file | what it holds |
 |---|---|
 | `investors.csv` | the firms — one row each, with a dated check and a stable `id` |
@@ -197,10 +210,17 @@ skills/investor-search/
   references/lists.md                  legal forms, generic tails, place words, type words
   references/why.md                    what was measured and what broke, rule by rule
   references/environment.md            where files go, the ledger format, delivering a file to the user
-  references/field-tests.md            what five field tests found, including the verdicts against it
+  references/field-tests.md            what the field tests found, including the verdicts against it
+  scripts/store.py                     the only writer of the memory files — append-only (Python 3, stdlib)
 ```
 
-**Five files in the skill, and the split is deliberate.** An earlier single file put every rule next to
+**The memory is protected by code, not only by rules.** A Hermes field test showed a second
+run rewriting the first run's files from memory. Since 1.1.0 every write goes through
+`scripts/store.py`, which never removes a row, never renumbers an id, skips firms already held
+or rejected, and counts the empty rounds itself. It needs `python3` and Hermes' terminal
+tool.
+
+**Five reference files in the skill, and the split is deliberate.** An earlier single file put every rule next to
 its justification, and a field test found the predictable result: *"every defect I found is a
 rule that exists but is unreachable at the moment of decision."* The reasoning is still
 shipped — it is just not in the way.
