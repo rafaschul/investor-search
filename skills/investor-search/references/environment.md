@@ -46,7 +46,8 @@ name into your first reply** so the user can see which drawer their work went in
 own `id` in each folder and the two are not linked. Say so once when it happens rather than
 implying a single global list exists.
 
-**Relative, not absolute.** Write `investor-search/poland/investors.csv` and let Hermes
+**All writes go through `scripts/store.py`** (`SKILL.md`, *Hermes*); this file describes what
+it produces. **Relative, not absolute.** Write `investor-search/poland/investors.csv` and let Hermes
 resolve it against `terminal.cwd`. Run `pwd` when the first reply needs the absolute folder.
 
 **Shared workspaces move the whole layout one level down** — `investor-search/@<space>/index.md`,

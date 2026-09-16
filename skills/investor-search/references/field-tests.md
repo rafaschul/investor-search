@@ -402,3 +402,24 @@ before searching wider, the manager-not-the-fund rule, and the two-headquarters 
 **Known to be market-specific and needing extension:** every list in `references/lists.md`. A
 market whose legal forms are missing produces silent duplicates — not an error, just a wrong
 file. That is the first thing to do before working a market not already covered.
+
+---
+
+## Test 6 — Hermes Agent, Austria, through Slack (1.0.0)
+
+Three models on the same prompt in a shared Slack channel; the Codex run completed.
+
+- **Worked:** the skill was picked up without being named; scope, shared-channel and
+  attachment questions were asked before round 1; a per-channel root was used; the first
+  reply gave the folder; 10 firms with a person, a quote and 30 field-level citations; four
+  advisers rejected and only counted; the report said *partial, 13 of 25 rounds*.
+- **Failed — the reason 1.1.0 exists:** a second request in the same channel rewrote every
+  file from scratch. Firms dropped from 10 to 8, ids were renumbered, the rejected file and
+  the pending queue were emptied and the round log restarted at 1. The rules against this
+  were in the text and were not followed. **Rules that protect the files are now enforced by
+  `scripts/store.py`, not by prose.**
+- **Also:** two free models never wrote a row before the run ended; the run stopped at 13
+  of 25 rounds with `dry_streak` 1 and gave no reason; single-firm checks were logged as
+  rounds; a market from another root was copied into the channel's `index.md`; the budget
+  was asked for as a question instead of stated.
+
