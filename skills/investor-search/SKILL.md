@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.5
+version: 1.1.6
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
