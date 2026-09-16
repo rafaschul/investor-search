@@ -12,18 +12,18 @@ three in the morning on the fortieth page.
 | source | what it contributed |
 |---|---|
 | A production investor-research system, run over several months and hundreds of pages | the exhaustion rule, the exclude-list logic, the seed handling, the type vocabulary, the contradiction rule |
-| **Field test 1 — Czech Republic** (`field-tests.md`) | 13 defects. No adviser test at all; the fold's step order; the contradiction rule blanking correct types |
-| **Field test 2 — UAE** (`field-tests.md`) | the fold silently merging two different companies; nine of ten local legal forms not folding; the language rule inverting |
-| **Field test 3 — Singapore** (`field-tests.md`) | 14 more. A five-way fold collision caught; and the finding that the skill had become too long to follow |
-| **Field test 4 — Estonia** (`field-tests.md`) | **the exhaustion rule fired and was wrong** — falsified inside the same run. Leading legal forms. Rebrands invisible to every rule |
-| **Field test 5 — Latvia** (`field-tests.md`) | Job 0 barely fired: 16 of 31 association members left undecided because a name may not decide a type and the budget went elsewhere. Manager-versus-fund undefined. Two headquarters, one column |
+| **Czech Republic** | 13 defects. No adviser test at all; the fold's step order; the contradiction rule blanking correct types |
+| **UAE** | the fold silently merging two different companies; nine of ten local legal forms not folding; the language rule inverting |
+| **Singapore** | 14 more. A five-way fold collision caught; and the finding that the skill had become too long to follow |
+| **Estonia** | **the exhaustion rule fired and was wrong** — falsified inside the same run. Leading legal forms. Rebrands invisible to every rule |
+| **Latvia** | Job 0 barely fired: 16 of 31 association members left undecided because a name may not decide a type and the budget went elsewhere. Manager-versus-fund undefined. Two headquarters, one column |
 
 ---
 
 ## Job 0 — the adviser test
 
 **This rule did not exist in the first two versions of the skill.** It was added after a
-field test produced a list that was defensible on every axis the skill measured and wrong in
+run produced a list that was defensible on every axis the skill measured and wrong in
 the way that mattered.
 
 > **Czech Republic:** five of the six firms verified from local-language queries were law
@@ -141,8 +141,7 @@ true one.
 > **46** in Poland searched in Polish over 48.
 >
 > *(These are production-system runs, not runs of this skill, and the two Poland runs used
-> different page budgets — 34 against 48 — so they are not a controlled comparison, and they
-> are not among the market runs written up in `field-tests.md`.)*
+> different page budgets — 34 against 48 — so they are not a controlled comparison,.)*
 >
 > A target of thirty would have reported **30 · 30 · 30** — the same answer three times, and
 > wrong all three.
@@ -169,7 +168,7 @@ names are exhausted; what comes after is plausible firms that do not exist.
 
 ### Why Gate 0 exists — the filesystem was an unstated requirement
 
-Every market field test ran on an agent with a working directory, so a question never
+Every market run ran on an agent with a working directory, so a question never
 got asked: *what does this skill do where there is no working directory?*
 
 It was asked by a run on a chat-only agent. The result was a competent, correctly-judged
@@ -362,7 +361,7 @@ to disprove itself is worth more than a rule that is right.
 
 **And why the default is `sourceUnchecked` when the tools cannot tell 4 from 4b apart.** Many
 agent fetch tools return one undifferentiated error for a 404, a robots.txt refusal and a
-paywall alike. **In the environment those field tests ran in, a direct liveness check on a
+paywall alike. **In the environment those runs used, a direct liveness check on a
 URL was impossible** — the distinction the rule turns on could not be observed at all. A rule
 that cannot be executed has to fail towards keeping the row: this check decides about half of
 all rejections, and **half of those were transport noise the one time it was measured.**
@@ -576,7 +575,7 @@ this is" about its most important entries is worse than one more value.**
 
 ### Why the `unknown` rate is never a quality signal
 
-Across the field tests the share of rows typed `unknown` ran **from a few in one run to
+Across the market runs the share of rows typed `unknown` ran **from a few in one run to
 roughly a third of them in another.** Nothing about the runs explains the
 spread: it tracks how much the firms in that market say about themselves on their own pages,
 which is a property of the market and not of the search. So there is no expected proportion
