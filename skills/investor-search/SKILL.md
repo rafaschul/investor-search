@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.4
+version: 1.1.5
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -78,8 +78,16 @@ python3 "$S" import  --root <root> --market <market> --from <file.xlsx or folder
 rounds in a row with no new firm, across at least three surfaces, none resting on a failed
 fetch, pending queue empty — or the user's own budget — or the 60-round backstop. **Exit 4
 means keep searching**: do not write a final report, do not say you are done. Use
-`finish --early "<reason>"` only for a real blocker (the search tool stopped working), and
-the report then says STOPPED EARLY.
+`finish --early user` only when the user ended the run, or `finish --early "blocker: <what
+failed>"` when tools or the model limit failed — the script refuses anything else — and the
+report then says STOPPED EARLY.
+
+**One run per market at a time.** If `init` returns `active_run_warning` and this
+conversation did not start that run, do not search: tell the user another conversation is
+running it, and stop. **A batch that has to be a file goes to `/tmp`, never to the working
+directory** — `finish` lists stray `*round*.json` files it finds there. **A firm that reads
+like an adviser** (advisory, consulting, wealth management, "our clients") gets its match
+left blank by `add` — run the *Job 0* test on it before calling it an investor.
 
 If `${HERMES_SKILL_DIR}` above was not replaced by a path, use the skill directory
 `skill_view` reported. `<root>` is `investor-search` or `investor-search/@<space>` (§6), prefixed with
@@ -1186,7 +1194,7 @@ name,reason,note,first_seen,source_url
 | `namedFamilyNotFirm` | a capital pool named only as "the X family" | no — terminal unless a vehicle name turns up |
 | `individualNotFirm` | a named angel with no vehicle — a real investor, but one row is one firm | no — terminal |
 
-**Gate 1 counts only the resolvable reasons.** Terminal rows stay in the file and in the report, but never hold a run open — `store.py status` shows them apart as `pending` versus `pending_open`. **`finish --early` is only for a user who ends the run or a real blocker (tools or model limit failing)** — never to get past a gate.
+**Gate 1 counts only the resolvable reasons.** Terminal rows stay in the file and in the report, but never hold a run open — `store.py status` shows them apart as `pending` versus `pending_open`. **`finish --early` takes only `user` or `blocker: …`** — never use it to get past a gate.
 
 **`individualNotFirm` is not a rejection.** Individual angels are legitimate targets; they
 simply do not fit a row that means "one firm". Keep them here with their source so the reader
