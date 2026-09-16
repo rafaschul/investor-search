@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.3
+version: 1.1.4
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -1185,6 +1185,8 @@ name,reason,note,first_seen,source_url
 | `outOfScopeSovereign` | sovereign or state parent | no — **terminal** |
 | `namedFamilyNotFirm` | a capital pool named only as "the X family" | no — terminal unless a vehicle name turns up |
 | `individualNotFirm` | a named angel with no vehicle — a real investor, but one row is one firm | no — terminal |
+
+**Gate 1 counts only the resolvable reasons.** Terminal rows stay in the file and in the report, but never hold a run open — `store.py status` shows them apart as `pending` versus `pending_open`. **`finish --early` is only for a user who ends the run or a real blocker (tools or model limit failing)** — never to get past a gate.
 
 **`individualNotFirm` is not a rejection.** Individual angels are legitimate targets; they
 simply do not fit a row that means "one firm". Keep them here with their source so the reader
