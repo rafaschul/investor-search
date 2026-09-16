@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.1
+version: 1.1.2
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -43,7 +43,6 @@ when a rule looks arbitrary.
 | `references/lists.md` | legal forms, generic tails, place words, type words — **extended in `investor-search/lists-local.md`, never in place** |
 | `references/why.md` | the measurements and the failures that produced each rule |
 | `references/environment.md` | where files go, the ledger format, delivering a file to the user |
-| `references/field-tests.md` | the five field runs, including every verdict against the skill |
 | `scripts/store.py` | **the only writer of the memory files** — run it, do not read it |
 
 ---
@@ -86,7 +85,7 @@ If `${HERMES_SKILL_DIR}` above was not replaced by a path, use the skill directo
 `skill_view` reported. `<root>` is `investor-search` or `investor-search/@<space>` (§6), prefixed with
 `investor_search.workspace` when that is set. **Never write these files with `write_file`,
 `patch`, `execute_code` or a shell redirect** — a rewrite from memory is how a second run
-erased the first one's firms in a field test. The script only appends: it keeps every
+erased the first one's firms. The script only appends: it keeps every
 existing row and id, continues ids from the highest on disk, skips a firm already held
 (same domain) or already rejected, enriches blank fields only, counts `dry_streak` itself,
 rebuilds `ledger.txt` and this root's `index.md`, and refuses any write that would shrink a
@@ -254,7 +253,7 @@ round 1 begins.
 | a file is short, truncated or unreadable | load what parses, **name the file that did not**, and shut Gate 0 — a partial round log that reads cleanly is the one input nothing else can check |
 
 **Before round 1, open `references/lists.md` and `investor-search/lists-local.md`, and add
-this market's legal forms, generic tails and place words to `lists-local.md`.** Most field tests skipped this, and the fold failed on local names.
+this market's legal forms, generic tails and place words to `lists-local.md`.** Most runs skipped this, and the fold failed on local names.
 
 ### 3 · The write test — in the first minute, not at the end
 
@@ -273,7 +272,7 @@ id,name,type,investor_evidence,matches_request,website,headquarters,headquarters
 sources.csv             id,field,rung,url
 investors-pending.csv   name,reason,note,first_seen,source_url
 investors-rejected.csv  name,reason,evidence,checked,source_url
-rounds.csv              round,query,surface,offered,survived,dry_streak
+rounds.csv              round,query,surface,offered,survived,dry_streak,fetch_failed,at
 ledger.txt              #LEDGER v2 market=<market> date=<ISO>
                         #SCOPE <the scope line from index.md>
                         key|name|domain|status
@@ -321,7 +320,9 @@ This request     family offices headquartered in Poland — a filter on that sco
 
 **The same reply says how the run will end** — `I will search until 6 rounds in a row find
 nothing new (at most 60 rounds)`, or the user's own number if they gave one. **Never ask for a
-budget** (*Job 1*).
+budget** (*Job 1*). **Add the time, from `init`:** when `minutes_per_round` is set, say
+`earlier rounds took about <m> min each; at least <empty_rounds_still_needed> more rounds` —
+an estimate, never a promise. On a first run say that the time is not known yet.
 Ask only what §5 and §6 require, together, in one `clarify` question where possible.
 
 On a first run the same block says so in one line:
@@ -550,7 +551,7 @@ line (`store.py add` warns when you do).
 - **Checking a firm you already have is a verification pass, not a round** — it gets no
   `round` line and does not count against the budget.
 - **Log each round with `store.py add`** — it writes `rounds.csv`
-  (`round,query,surface,offered,survived,dry_streak`) and computes the streak.
+  (`round,query,surface,offered,survived,dry_streak,fetch_failed,at`) and computes the streak.
   Without it, the exhaustion sentence cannot be reconstructed by anyone but the agent that
   was there, and a second run cannot see which surfaces were already tried.
 
@@ -562,7 +563,7 @@ line (`store.py add` warns when you do).
 > **"Six queries I chose stopped working" is not "this market is exhausted."** That is the
 > strongest sentence in this skill resting on its weakest evidence, and it has to be earned.
 
-**Gates 1 to 3 were written after that run and have not themselves been field-tested.** Treat
+**Gates 1 to 3 were written after that run and have not themselves been proven in a run.** Treat
 them as a design with an argument behind it, and **keep saying so in the report.** Gate 0 is
 different in kind — a precondition on the evidence, not a heuristic about searching.
 
@@ -885,7 +886,7 @@ this one is genuinely arguable and a reader may want the other answer.
    Leading token only, never inside the name.
 5. **Strip legal forms from BOTH ends, repeatedly, dots and spaces tolerated** — `s.r.o.`,
    `s r o`, `sro` and `S.R.O.` are one entry. **Add this market's forms to
-   `investor-search/lists-local.md` before round 1** — most field tests skipped that, and the fold
+   `investor-search/lists-local.md` before round 1** — most runs skipped that, and the fold
    failed on local names.
    ⚠ **Leading forms are not rare.** Baltic and Nordic registries write `AS Vesta` while
    the firm writes `Vesta`; the same list holds `Vesta Capital AS`. An end-anchored strip
@@ -1096,6 +1097,15 @@ handed over or printed — it becomes a count.
 **Say which step you took.** A path the user cannot reach is not a delivered file, and
 silently falling to step 3 reads as the skill failing to produce one.
 
+**Asked for "the file", "the xlsx" or "the list" — in any thread, mid-run or later:** run
+`store.py deliver` for the market(s) held in this root and post that file. **Never search
+the disk for it and never list, open or name any file outside this skill's folders** —
+the user's other files are not part of this job, least of all in a channel.
+
+**In chat, report numbers, not a list of links.** Name the new firms at most once, without a
+link per firm — the `.xlsx` carries every source, and a link per line floods a channel with
+previews.
+
 ### `investors.csv` — UTF-8 with BOM
 
 | column | meaning |
@@ -1202,7 +1212,7 @@ made, not to suppress the name forever.
 ### `rounds.csv` — what was tried
 
 ```
-round,query,surface,offered,survived,dry_streak
+round,query,surface,offered,survived,dry_streak,fetch_failed,at
 ```
 
 `rounds.csv` is Gate 2's entire input, and it tells the next run which surfaces were already
