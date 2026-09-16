@@ -7,7 +7,7 @@ skipped and reported. Standard library only.
 
   python3 store.py init    --root ROOT --market M --scope "..." [--budget N]
   python3 store.py status  --root ROOT --market M
-  python3 store.py finish  --root ROOT --market M [--early "reason"]  (exit 4 = keep searching)
+  python3 store.py finish  --root ROOT --market M [--early user | --early "blocker: ..."]  (exit 4 = keep searching)
   python3 store.py deliver --root ROOT --market M --out DIR     (ONE file for the user)
   python3 store.py add     --root ROOT --market M  < batch.json
   python3 store.py export  --root ROOT --market M --out DIR     (tier B hand-over)
@@ -65,6 +65,10 @@ BACKSTOP = 60
 
 
 TERMINAL_PENDING = {"outOfCountry", "outOfScopeSovereign", "namedFamilyNotFirm", "individualNotFirm"}
+ACTIVE_MINUTES = 15
+ADVISER_HINTS = ("advisory", "advisor", "adviser", "consulting", "consultancy", "multi family office",
+                 "multi-family office", "wealth management", "our clients", "for clients",
+                 "catering to", "serves families", "services for families")
 PLACEHOLDERS = {"—", "–", "-", "n/a", "na", "none", "null", "not found", "not available"}
 
 
@@ -290,15 +294,27 @@ def cmd_init(a):
         rebuild(a.root, folder, market, scope)
         prev = run_state(folder)
         resumed = bool(prev) and not prev.get("finished") and "started_at_round" in prev
+        idle = None
+        if resumed and prev.get("last_write"):
+            try:
+                idle = (dt.datetime.now(dt.timezone.utc) - dt.datetime.strptime(
+                    prev["last_write"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)).total_seconds() / 60
+            except ValueError:
+                idle = None
         state = {"started_at_round": int(prev["started_at_round"]) if resumed
                  else len(read_rows(folder / "rounds.csv")),
                  "started": prev.get("started", TODAY) if resumed else TODAY,
                  "budget": a.budget or (prev.get("budget") if resumed else None),
                  "user_raised_backstop": bool(a.budget and a.budget > BACKSTOP)
                  or bool(resumed and prev.get("user_raised_backstop")),
-                 "finished": False}
+                 "finished": False, "last_write": prev.get("last_write", "") if resumed else ""}
         (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
         st = status(folder, market)
+        if idle is not None and idle < ACTIVE_MINUTES:
+            st["active_run_warning"] = (
+                f"this market was written {idle:.0f} min ago by a run that has not finished. If THIS "
+                "conversation started it, carry on. Otherwise another conversation is running it: "
+                "do not search in parallel - tell the user and stop.")
         st["created"] = created
         st["first_run"] = len(created) == len(FILES)
         # read-back proof
@@ -376,6 +392,11 @@ def cmd_add(a):
                 refmap[r.get("ref") or name] = held
                 continue
             row = {c: r.get(c, "") for c in INVESTOR_COLS}
+            text = " ".join(str(row.get(c, "")) for c in ("name", "key_quote", "sectors")).lower()
+            if row.get("matches_request") == "yes" and any(h in text for h in ADVISER_HINTS):
+                row["matches_request"] = ""
+                report.setdefault("warnings", []).append(
+                    f"{name}: reads like an adviser - matches_request left blank; run the Job 0 test")
             if row.get("investor_evidence") in ("", "unclear") and row.get("matches_request") == "yes":
                 row["matches_request"] = ""
                 report.setdefault("warnings", []).append(
@@ -442,6 +463,10 @@ def cmd_add(a):
         write_rows(folder / "investors-pending.csv", FILES["investors-pending.csv"], pen)
         write_rows(folder / "investors-rejected.csv", FILES["investors-rejected.csv"], rej)
         write_rows(folder / "rounds.csv", FILES["rounds.csv"], rnd)
+        state = run_state(folder)
+        if state:
+            state["last_write"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
         rebuild(a.root, folder, market, scope_of(folder))
         st = status(folder, market)
         report.update({k: st[k] for k in ("firms", "pending", "rejected_count", "rounds", "next_id",
@@ -454,6 +479,11 @@ def cmd_finish(a):
     st = status(folder, market)
     inv = read_rows(folder / "investors.csv")
     rounds = read_rows(folder / "rounds.csv")[int(run_state(folder).get("started_at_round", 0)):]
+    if a.early and not (a.early == "user" or a.early.startswith("blocker:")):
+        print(json.dumps({"refused": "--early takes 'user' (the user ended the run) or "
+                                     "'blocker: <what failed>' (tools or model limit). A gate that "
+                                     "is still closed is not a blocker - keep searching."}))
+        sys.exit(2)
     if not st["stop_allowed"] and not a.early:
         print(json.dumps({"stop_allowed": False, "stop_reason": st["stop_reason"],
                           "dry_streak": st["dry_streak"], "rounds_this_run": st["rounds_this_run"],
@@ -484,6 +514,7 @@ def cmd_finish(a):
             "headquarters_partial": [r["name"] for r in inv if r.get("headquarters_partial") == "yes"],
             "no_person": [r["name"] for r in inv if not r.get("person")],
             "evidence_unclear": [r["name"] for r in inv if r.get("investor_evidence") in ("", "unclear")],
+            "stray_files_in_working_dir": sorted(f.name for f in Path.cwd().glob("*round*.json")),
         },
         "citations": len(read_rows(folder / "sources.csv")),
         "folder": st["folder"],
@@ -676,7 +707,8 @@ def main():
             p.add_argument("--budget", type=int, default=0,
                            help="only when the user named a number of rounds")
         if name == "finish":
-            p.add_argument("--early", default="", help="a real blocker, e.g. search tool unavailable")
+            p.add_argument("--early", default="",
+                           help="'user' (the user ended the run) or 'blocker: <what failed>'")
         if name == "deliver":
             p.add_argument("--out", required=True)
         if name == "export":
