@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.0
+version: 1.1.1
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -61,7 +61,9 @@ stop.
 
 ```
 S="${HERMES_SKILL_DIR}/scripts/store.py"
-python3 "$S" init    --root <root> --market <market> --scope "<scope>"   # start of every run
+python3 "$S" init    --root <root> --market <market>                     # start of every run
+                     # add --scope "<scope>" ONLY on a first run or when the user names a
+                     # different population; "continue"/"find more" never passes --scope
                      # add --budget N ONLY if the user named a number of rounds
 python3 "$S" status  --root <root> --market <market>                     # what is held
 python3 "$S" add     --root <root> --market <market> <<'JSON'            # after EVERY round
@@ -112,7 +114,7 @@ write test proves this run can write, and only the next run's read proves the fi
 messaging gateway    run store.py deliver, then put the MEDIA:/absolute/path it prints on
 (Slack, Telegram,    its own line — ONE file, <market>-investors.xlsx, arrives as a
 WhatsApp, Discord,   document. Never attach the CSVs: they are the memory, not the
-Signal, email)       deliverable. In a channel, ask before posting: it goes to everyone.
+Signal, email)       deliverable. Post it WITHOUT asking — in a channel too (see §6).
 CLI / TUI            there is no attachment channel and MEDIA: prints as plain text —
                      state the absolute path; the user opens it.
 scheduled job        put the MEDIA: lines in the final response; the job's configured
@@ -134,7 +136,9 @@ workspace: stop before round 1 and report the question as the result.
 
 **Subagents.** `delegate_task` children may search and return candidate names with their
 source URLs. **Only this agent writes the seven files** — two writers are the overlap
-*Before Job 0* §8 exists to catch.
+*Before Job 0* §8 exists to catch. **Pass every batch to `store.py add` on stdin (the heredoc
+above). Never write batch or scratch files into the working directory** — it is the user's
+folder; if a file is unavoidable, use `/tmp`.
 
 **Learning belongs in the workspace, never in this skill.** This skill is installed from a
 skills hub. Changing its own files — `skill_manage`, or `write_file` / `patch` into the skill
@@ -349,6 +353,10 @@ shared when Hermes' session context or the conversation shows it: `Session type:
 session`; a group chat, channel or server on the `Source` line; several people addressing
 you; or a user who says the agent is used by a team (*Hermes* above).
 
+**In a channel, say once in the first reply that the finished Excel file will be posted
+here for everyone in it.** That notice is the only one: at the end, post the file without
+asking again.
+
 **Use a separate root per user or team whenever the session context names one.**
 The root becomes `investor-search/@<space>/` — `<space>` is the chat or channel name on
 the `Source` line, lowercase letters, digits and hyphens only — and the whole layout moves
@@ -533,7 +541,8 @@ answer is 46. If 12 can be sourced, the answer is 12 — and you say so:
 ### What a round is
 
 **One query, and the verification of what it returned.** Define it or the streak counter
-measures nothing.
+measures nothing. **Three queries are three rounds** — never join them with `;` into one
+line (`store.py add` warns when you do).
 
 - A round must be a **genuine attempt to find new names** — never a query narrowed to fail.
 - **A directory yielding more than 10 names is not one round.** The first 10 close it; the
@@ -654,12 +663,19 @@ the stop. **Never ask the user for a budget.** If the user names a number ("use 
 without a budget; a user who explicitly asks for more gets their number after one sentence
 on what it costs.
 
-**"Continue" or "find more" means the same market and scope, from the files:** run `init`,
-report what is held, work the pending queue first, then surfaces not yet in `rounds.csv`.
-**A new run earns its own six empty rounds** — an earlier run's streak never ends this one.
+**"Continue" or "find more" means the same market and scope, from the files:** run `init`
+**without `--scope`** (the stored scope is used; a type named in the request is a filter, not
+a new scope), report what is held, work the pending queue first, then surfaces not yet in `rounds.csv`.
+**A finished run is never resumed; an unfinished one always is.** `finish` closes a run. A run
+that ended any other way (model limit, crash, a turn that ended) is picked up by the next
+`init` — its empty rounds still count. After a closed run, a new run earns its own six.
 
 **Do not stop early.** Stopping after one new firm, or at round 13 with `dry_streak` 1, is a
 defect. Call `finish`; while it exits 4, keep searching.
+**While `finish` exits 4, do not end your turn:** no progress summary, no interim workbook,
+no question to the user. The file and the report come once, when `finish` exits 0 — unless
+the user asks for the file now, or a real blocker (tools or model limit failing) ends the
+run, which is then reported as PARTIAL with the file.
 When it runs out:
 
 ```
@@ -1072,8 +1088,8 @@ handed over or printed — it becomes a count.
 ```
 1  write the file, and say where it went                  always
 2  deliver the file itself when the user cannot open      the Hermes messaging gateway;
-   that path — a MEDIA:/absolute/path line (*Hermes*)     in a shared channel, ask first —
-                                                          it posts to everyone
+   that path — a MEDIA:/absolute/path line (*Hermes*)     automatically, never ask first;
+                                                          a channel was told at the start
 3  only if no file can be delivered: CSV text in chat     last resort (tier C)
 ```
 
