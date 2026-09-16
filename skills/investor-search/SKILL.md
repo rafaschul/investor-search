@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.0.0
+version: 1.1.0
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -29,7 +29,7 @@ came from and how well it was checked.
 - Investor research, deal sourcing, fundraising and capital-raise prospect lists, investor databases, LP, HNW/UHNW and family-office lead generation, sovereign wealth research.
 - CRM enrichment, or filling gaps in an investor list the user already has.
 
-**Needs** Hermes' `web_search` and `web_extract` (toolset `web`) and `read_file` / `write_file` (toolset `file`). **Writes** its files under the working directory and reads them back, so a second run continues instead of repeating. The user always gets `investors.csv` as a file. Where the folder cannot be kept, the files go to the user to upload next time, and the result is reported as partial rather than claiming a completeness it cannot prove.
+**Needs** Hermes' `web_search` and `web_extract` (toolset `web`) and `terminal` with `python3` for the memory store (`scripts/store.py`). **Writes** its files under the working directory and reads them back, so a second run continues instead of repeating. The user always gets one Excel file (`<market>-investors.xlsx`) with every firm and its source links. It searches until six rounds in a row find nothing new; it never asks for a budget. Where the folder cannot be kept, that same file is the memory to upload next time, and the result is reported as partial rather than claiming a completeness it cannot prove.
 
 **This file is the rules.** Two of the reference files are read *while working*, not
 afterwards: open `references/lists.md` before round 1 and add this market's word forms to
@@ -44,6 +44,7 @@ when a rule looks arbitrary.
 | `references/why.md` | the measurements and the failures that produced each rule |
 | `references/environment.md` | where files go, the ledger format, delivering a file to the user |
 | `references/field-tests.md` | the five field runs, including every verdict against the skill |
+| `scripts/store.py` | **the only writer of the memory files** — run it, do not read it |
 
 ---
 
@@ -52,11 +53,47 @@ when a rule looks arbitrary.
 This skill is written for Hermes Agent. Everything below maps its rules onto Hermes' own
 tools.
 
-**Tools.** Search with `web_search`, read pages with `web_extract`. Read and write the
-memory files with `read_file` and `write_file` — not with shell redirects, so every write is
-a tool call you can see succeed. Use `terminal` only to run `pwd` when you need the absolute
-folder for the first reply. Ask the questions in *Before Job 0* §5 and §6 with `clarify`
-when it is available; otherwise ask in the reply and stop.
+**Tools.** Search with `web_search`, read pages with `web_extract`. Ask the questions in
+*Before Job 0* §5 and §6 with `clarify` when it is available; otherwise ask in the reply and
+stop.
+
+**The memory files are written by one script, and only by it.** Run it with `terminal`:
+
+```
+S="${HERMES_SKILL_DIR}/scripts/store.py"
+python3 "$S" init    --root <root> --market <market> --scope "<scope>"   # start of every run
+                     # add --budget N ONLY if the user named a number of rounds
+python3 "$S" status  --root <root> --market <market>                     # what is held
+python3 "$S" add     --root <root> --market <market> <<'JSON'            # after EVERY round
+{"investors": [...], "sources": [...], "pending": [...], "rejected": [...],
+ "round": {"query": "...", "surface": "...", "offered": 4, "fetch_failed": false}}
+JSON
+python3 "$S" finish  --root <root> --market <market>     # before ending; exit 4 = keep searching
+python3 "$S" deliver --root <root> --market <market> --out <folder>     # the ONE file for the user
+python3 "$S" import  --root <root> --market <market> --from <file.xlsx or folder>  # user uploads
+```
+
+**The run ends only when `finish` says so.** It checks the stop rule itself (*Job 1*): six
+rounds in a row with no new firm, across at least three surfaces, none resting on a failed
+fetch, pending queue empty — or the user's own budget — or the 60-round backstop. **Exit 4
+means keep searching**: do not write a final report, do not say you are done. Use
+`finish --early "<reason>"` only for a real blocker (the search tool stopped working), and
+the report then says STOPPED EARLY.
+
+If `${HERMES_SKILL_DIR}` above was not replaced by a path, use the skill directory
+`skill_view` reported. `<root>` is `investor-search` or `investor-search/@<space>` (§6), prefixed with
+`investor_search.workspace` when that is set. **Never write these files with `write_file`,
+`patch`, `execute_code` or a shell redirect** — a rewrite from memory is how a second run
+erased the first one's firms in a field test. The script only appends: it keeps every
+existing row and id, continues ids from the highest on disk, skips a firm already held
+(same domain) or already rejected, enriches blank fields only, counts `dry_streak` itself,
+rebuilds `ledger.txt` and this root's `index.md`, and refuses any write that would shrink a
+file. Its JSON output is your read-back: report from it, never from memory.
+
+In a batch, each investor carries a `ref` (any short label) and its sources point at that
+`ref`; the script assigns the real `id`. Fill the `investors.csv` columns you have
+(*Output*); leave the rest out. `rejected` rows carry `name`, `reason`, `evidence`,
+`source_url` — the script keeps their names out of the ledger.
 
 **Where the files land.** If a `[Skill config]` block shows `investor_search.workspace` with
 a value, that folder is the root: write `<workspace>/investor-search/…` with absolute paths,
@@ -72,10 +109,10 @@ write test proves this run can write, and only the next run's read proves the fi
 **Handing over the file** (*Output*, step 2):
 
 ```
-messaging gateway    put  MEDIA:/absolute/path/to/investors.csv  on its own line in the
-(Slack, Telegram,    reply, and the same for sources.csv — each arrives as a document.
-WhatsApp, Discord,   Hermes maps container paths itself. In a channel with several
-Signal, email)       people, ask before posting: it goes to everyone in it.
+messaging gateway    run store.py deliver, then put the MEDIA:/absolute/path it prints on
+(Slack, Telegram,    its own line — ONE file, <market>-investors.xlsx, arrives as a
+WhatsApp, Discord,   document. Never attach the CSVs: they are the memory, not the
+Signal, email)       deliverable. In a channel, ask before posting: it goes to everyone.
 CLI / TUI            there is no attachment channel and MEDIA: prints as plain text —
                      state the absolute path; the user opens it.
 scheduled job        put the MEDIA: lines in the final response; the job's configured
@@ -142,11 +179,13 @@ a write succeeds.
 
 ```
 1  locate   the workspace root: investor-search/  — or investor-search/@<space>/ when shared (§6)
-2  read     index.md and lists-local.md, then every file in this market's folder
-3  probe    write index.md and read it back — this is the write test (§3)
-4  create   whichever of the seven files is missing, header only (§3)
-5  report   first reply: the folder in use, and what was found (§4)
-6  settle   a scope mismatch (§5) or a shared-folder warning (§6) is answered by the user
+2  init     store.py init — creates what is missing, never touches what exists, writes and
+            reads back index.md (the write test, §3), returns what is held (§2)
+3  import   files or a ledger the user uploaded: store.py import, before anything else (§7)
+4  read     lists-local.md; the `status` output is your exclude list — held_names,
+            excluded_domains, pending_names
+5  report   first reply: the folder in use, what was found, how the run will end (§4)
+6  settle   a scope mismatch (§5 — init exits 3) or a shared-folder warning (§6)
 ```
 
 **No search runs until step 6 is settled.** Every step is a tool call you can see succeed or
@@ -218,13 +257,11 @@ this market's legal forms, generic tails and place words to `lists-local.md`.** 
 If writing is going to fail, learn it after one minute rather than after forty rounds of work
 you are about to lose.
 
-**Probe.** Write `index.md` — back unchanged if it exists, or with the header and this
-market's row if it does not — **then read it again.** Only a read-back that shows what you
-wrote counts as success. A write that returned success proves nothing if it landed
-somewhere this run does not read — an ephemeral container, a different `terminal.cwd`.
-**Create what is missing, header only.** For each of the seven files that does not exist,
-write it with its header line and nothing else. **Never recreate a file that exists** — an
-existing file is data, and a header-only rewrite erases it.
+**Probe with `store.py init`.** It creates each missing file with its header only, never
+touches a file that exists, rewrites `index.md` and reads it back — `"write_test": "ok"` is
+the only success. A write that returned success proves nothing if it landed somewhere this
+run does not read — an ephemeral container, a different `terminal.cwd`. The headers it
+writes, for reference:
 
 ```
 investors.csv           (UTF-8 with BOM)
@@ -241,13 +278,15 @@ ledger.txt              #LEDGER v2 market=<market> date=<ISO>
 
 A header-only file that **this run** created is new, not truncated — the "short or
 unreadable" row in §2 is about files you found, not files you made.
-**Write as you go.** Write kept rows, pending names, rejections and the round line **at the
-end of every round**, not only at the end of the run. A run that dies at round 30 should
-leave 29 rounds on disk. Each write still follows §8: read before you overwrite.
+**Write as you go: one `store.py add` at the end of every round**, with that round's kept
+rows, their sources, new pending names, rejections and the `round` line — **also when the
+round kept nothing**, because that empty line is what advances `dry_streak`. Never batch
+several rounds into one call, never hold rows back for the end. A run that dies at round 30
+must leave 29 rounds on disk.
 
-- **Probe succeeded** → normal run.
-- **Probe refused, or there is no file tool** → §7 (the user still gets a file). Say so in
-  the first reply.
+- **`init` printed `"write_test": "ok"`** → normal run.
+- **`init` failed, or there is no `terminal`/`python3`** → §7 (the user still gets a file).
+  Say so in the first reply.
 
 **A silent write failure is the worst outcome available** (`why.md`). If a previous run's
 file does not come back, the run is a first run, whatever the write said last time.
@@ -260,8 +299,8 @@ if that fails, the relative path plus the working directory as you understand it
 absolute path.** A file the user cannot find is a file that does not exist; a path that
 turns out to be wrong is worse.
 
-**If files were found, report them before searching** — four facts, taken from the files,
-not from memory:
+**If files were found, report them before searching** — four facts, taken from the `init`
+output, not from memory:
 
 ```
 Working folder   /home/u/work/investor-search/poland/        (from pwd)
@@ -275,6 +314,11 @@ This request     family offices headquartered in Poland — a filter on that sco
 - **pending** — data rows in `investors-pending.csv`.
 - **newest check** — the latest `checked` date in `investors.csv`, **with its age.** Old rows
   are evidence of a past state, not a claim about today.
+
+**The same reply says how the run will end** — `I will search until 6 rounds in a row find
+nothing new (at most 60 rounds)`, or the user's own number if they gave one. **Never ask for a
+budget** (*Job 1*).
+Ask only what §5 and §6 require, together, in one `clarify` question where possible.
 
 On a first run the same block says so in one line:
 
@@ -332,15 +376,15 @@ it. Its names never travel into `index.md`, the report, or `ledger.txt`.
 
 ### 7 · When the folder cannot be kept — the user still gets a file
 
-**The deliverable is always `investors.csv` as a file.** What changes when the probe fails is
+**The deliverable is always one file, `<market>-investors.xlsx`.** What changes when the probe fails is
 only where the memory lives. Three tiers, in this order — **say in the first reply which one
 this run is on**:
 
 ```
-A  persistent folder works      investor-search/<market>/ as above; deliver investors.csv from it
-B  no persistent folder, but    write the files wherever Hermes can write (an ephemeral
-   a file can be handed over    container, a temp folder) and deliver them with MEDIA: lines
-                                or as absolute paths; nothing will be here next time
+A  persistent folder works      investor-search/<market>/ as above; store.py deliver, send the .xlsx
+B  no persistent folder, but    run the store wherever Hermes can write (an ephemeral
+   a file can be handed over    container, a temp folder), store.py deliver, send the .xlsx;
+                                nothing will be here next time — the file is the memory
 C  no file mechanism at all     last resort: CSV text in the chat, then the ledger
    (no file toolset)
 ```
@@ -351,10 +395,12 @@ C  no file mechanism at all     last resort: CSV text in the chat, then the ledg
 > you the files instead — keep them, and upload them at the start of the next run so I can
 > continue without repeating firms."*
 
-- Deliver `investors.csv` and `sources.csv` — the list and the evidence behind it — plus
-  `investors-pending.csv`, `rounds.csv` and `ledger.txt`, so an upload next time restores the
-  queue and the round history. **Never `investors-rejected.csv`**: its decisions travel in the
-  ledger as fold key and domain, without a name.
+- `store.py deliver --out <a folder this run can send from>` and send the one `.xlsx` it
+  writes. It holds the firms with their source links, the pending queue, the round history
+  and the ledger — so the same file is both the result and the memory: uploaded next time,
+  `store.py import --from <that file>` restores everything. **It never holds
+  `investors-rejected.csv`**: those decisions travel in the ledger as fold key and domain,
+  without a name.
 - **Gate 0 is shut for this run:** the files were not kept where this skill can read them
   back, so **this run cannot prove exhaustion, and the report says so.**
 
@@ -375,21 +421,22 @@ C  no file mechanism at all     last resort: CSV text in the chat, then the ledg
 > *"To continue next time without repeating these firms, upload these files — or paste this
 > ledger — at the start of the next run."*
 
-When a later run receives uploaded files or a pasted ledger, **load them before round 1** and
-put every firm on the exclude list. If that run can write (tier A), copy the uploaded files
-into `investor-search/<market>/` first — the folder becomes the memory from then on — and
-report them as in §4, saying they came from an upload. A pasted ledger stops duplicates; it
+When a later run receives uploaded files or a pasted ledger, **load them before round 1**:
+put them in one folder (a pasted ledger goes into a file named `ledger.txt`), run
+`store.py import --from <that folder>`, then `status`. Rows are merged, never replacing what
+is held; ids are kept when the market folder was empty; a ledger alone joins the exclude
+list. Report them as in §4, saying they came from an upload. A pasted ledger stops duplicates; it
 does not reopen Gate 0.
 
 ### 8 · Resuming is not the same as trusting
 
 - **Report the age of what you loaded** (§4).
-- **Re-read before every write. If it changed, do not merge.** Two sessions can work the
-  same market at once, and both will have issued the same next `id` to different firms — so a
-  blind merge reattributes citations rather than combining work. If the file on disk is no
-  longer the one you loaded, **write yours beside it** as `investors-<ISO date>.csv`, say
-  plainly that two runs overlapped, and leave the reconciliation to a person who can see both.
-  Never overwrite a file you read forty rounds ago.
+- **Two sessions on one market.** `store.py` re-reads the files under a lock on every `add`
+  and assigns the next `id` itself, so two runs cannot hand the same `id` to different firms.
+  If its output shows firms you did not add, say plainly that another run is working the same
+  market.
+- **A file that shrank is not yours to fix.** If `status` shows fewer firms than you
+  reported earlier, stop and say so — never rebuild the file from what you remember.
 - **An `id` is permanent.** Never reissue one, never renumber on rewrite — `sources.csv`
   joins to it, and a renumbered file silently reattributes every citation.
 
@@ -491,7 +538,10 @@ measures nothing.
 - A round must be a **genuine attempt to find new names** — never a query narrowed to fail.
 - **A directory yielding more than 10 names is not one round.** The first 10 close it; the
   rest are a queue. **Drawing from the queue is not a round.**
-- **Log each round to `rounds.csv`** — `round,query,surface,offered,survived,dry_streak`.
+- **Checking a firm you already have is a verification pass, not a round** — it gets no
+  `round` line and does not count against the budget.
+- **Log each round with `store.py add`** — it writes `rounds.csv`
+  (`round,query,surface,offered,survived,dry_streak`) and computes the streak.
   Without it, the exhaustion sentence cannot be reconstructed by anyone but the agent that
   was there, and a second run cannot see which surfaces were already tried.
 
@@ -597,9 +647,19 @@ made a round dry. When a streak hinges on one call, say which one in the report.
 
 ### The budget rule
 
-**Ask the user for a budget. If they do not set one, use 25 rounds** and say that you did.
-**Sixty rounds is the hard backstop** whatever the budget says — stop there and report a
-budget stop, whether or not any gate ever opened.
+**There is no budget unless the user sets one.** By default the run continues until the
+exhaustion rule is met — six empty rounds in a row, with the gates open — and `finish` allows
+the stop. **Never ask the user for a budget.** If the user names a number ("use 10 rounds",
+"quick scan"), pass it as `init --budget N`. **Sixty rounds is the backstop** for a run
+without a budget; a user who explicitly asks for more gets their number after one sentence
+on what it costs.
+
+**"Continue" or "find more" means the same market and scope, from the files:** run `init`,
+report what is held, work the pending queue first, then surfaces not yet in `rounds.csv`.
+**A new run earns its own six empty rounds** — an earlier run's streak never ends this one.
+
+**Do not stop early.** Stopping after one new firm, or at round 13 with `dry_streak` 1, is a
+defect. Call `finish`; while it exits 4, keep searching.
 When it runs out:
 
 ```
@@ -994,8 +1054,10 @@ round 22   + person, role, LinkedIn           ← its team page
 
 ## Output — six files, and how they reach the user
 
-**The deliverable is `investors.csv`, as a file.** `sources.csv` goes with it — the list and
-the evidence it rests on. The other files are this skill's memory.
+**The deliverable is ONE file: `<market>-investors.xlsx`**, written by `store.py deliver`.
+Its first sheet is the firm list with a `source_links` column (every field's evidence in one
+cell); further sheets carry sources, pending, rounds and the ledger. The six CSV files are
+this skill's memory and stay in the folder — **never send them to the user.**
 
 **Where writing works (tier A):** all six files below live in `investor-search/<market>/` (or
 under `investor-search/@<space>/` in a shared workspace), with the `index.md` that lets a later
@@ -1005,7 +1067,7 @@ run find them — created at the start of the run and updated every round (*Befo
 when no file can be handed over, prints CSV text. `investors-rejected.csv` is **never**
 handed over or printed — it becomes a count.
 
-**Handing it over — the user always leaves with `investors.csv`:**
+**Handing it over — the user always leaves with the `.xlsx`:**
 
 ```
 1  write the file, and say where it went                  always
@@ -1147,6 +1209,13 @@ long CSV into a chat in numbered parts: **`references/environment.md`**.
 
 ## Report when you finish
 
+**Take every number from `store.py finish`**, never from the conversation — and write the
+report only after `finish` exits 0. The report is not
+optional in a chat app: send the whole block below as text, then the files. Its second line
+says **why the run stopped** — `EXHAUSTED on the surfaces named` (all four gates open),
+`STOPPED ON BUDGET` (the user's own number), `STOPPED ON THE 60-ROUND BACKSTOP`, or
+`STOPPED EARLY — <reason>` (a real blocker, named).
+
 ```
 <MARKET> · 33 firms over 10 rounds + 4 verification passes
 STOPPED ON BUDGET — PARTIAL, not an exhaustion count
@@ -1194,8 +1263,8 @@ the `written` line naming the files that were sent and no folder path:
 
 ```
 NOT KEPT HERE — files sent to you. PARTIAL; exhaustion cannot be claimed here.
-written      sent: investors.csv · sources.csv · investors-pending.csv · rounds.csv · ledger.txt
-resume       upload these files at the start of the next run
+written      sent: <market>-investors.xlsx (one file)
+resume       upload this file at the start of the next run
 ```
 
 Tier C — no file could be handed over at all:
@@ -1212,7 +1281,8 @@ listed in the ledger as `pending`, not carried in a file.
 **The `written` line is not decoration** — it is the only place the user learns where their
 files actually are, and whether the completeness claim was available at all.
 
-Say how you knew it was finished — or say plainly that you did not.
+Say how you knew it was finished — or say plainly that you did not. Then, on one line: *"To
+continue, say `continue Austria`"* (with the market) — the next run starts from these files.
 
 ---
 
@@ -1221,7 +1291,8 @@ Say how you knew it was finished — or say plainly that you did not.
 ```
 [ ] index.md and every file this run wrote were read back after the last write
 [ ] the offered count equals the sum of the report's lines
-[ ] investors.csv reached the user: MEDIA: line (gateway), absolute path (CLI/TUI),
+[ ] store.py finish exited 0 — the run did not end while it said keep searching
+[ ] the .xlsx reached the user: MEDIA: line (gateway), absolute path (CLI/TUI),
     or — only with no file toolset — CSV text, and the reply says which
 [ ] no name or reason from investors-rejected.csv appears in the reply
 [ ] exhaustion is claimed only if Gates 0–3 were all open; otherwise PARTIAL
