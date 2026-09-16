@@ -64,6 +64,7 @@ MIN_SURFACES = 3
 BACKSTOP = 60
 
 
+TERMINAL_PENDING = {"outOfCountry", "outOfScopeSovereign", "namedFamilyNotFirm", "individualNotFirm"}
 PLACEHOLDERS = {"—", "–", "-", "n/a", "na", "none", "null", "not found", "not available"}
 
 
@@ -250,7 +251,11 @@ def status(folder, market):
         "firms": len(inv), "pending": len(read_rows(folder / "investors-pending.csv")),
         "rejected_count": len(read_rows(folder / "investors-rejected.csv")),
         "rounds": len(rounds), "dry_streak": int(rounds[-1]["dry_streak"]) if rounds else 0,
-        **gates(folder, len(read_rows(folder / "investors-pending.csv")), rounds, run_state(folder)),
+        # Gate 1 counts only pending rows that a search can still resolve; terminal reasons stay listed
+        "pending_open": sum(1 for p in read_rows(folder / "investors-pending.csv")
+                            if p.get("reason") not in TERMINAL_PENDING),
+        **gates(folder, sum(1 for p in read_rows(folder / "investors-pending.csv")
+                            if p.get("reason") not in TERMINAL_PENDING), rounds, run_state(folder)),
         "next_id": f"f-{(max(ids) + 1 if ids else 1):03d}",
         "minutes_per_round": pace(rounds),
         "empty_rounds_still_needed": max(0, DRY_ROUNDS - (int(rounds[-1]["dry_streak"]) if rounds else 0)),
