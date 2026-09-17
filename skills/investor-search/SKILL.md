@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.6
+version: 1.1.7
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -81,6 +81,11 @@ means keep searching**: do not write a final report, do not say you are done. Us
 `finish --early user` only when the user ended the run, or `finish --early "blocker: <what
 failed>"` when tools or the model limit failed — the script refuses anything else — and the
 report then says STOPPED EARLY.
+
+**A pending row is never a blocker.** If `finish` exits 4 with pending rows open, close each
+one (*Closing a pending row*, under `investors-pending.csv`): an alias of a held firm goes back
+in `investors` with the held website; a headquarters you cannot find after checking the own
+site and a registry becomes `hqNotPublished` with a note. Then run `finish` again.
 
 **One run per market at a time.** If `init` returns `active_run_warning` and this
 conversation did not start that run, do not search: tell the user another conversation is
@@ -1159,7 +1164,7 @@ filled field.
 
 **`key_quote` must evidence the row, not merely come from the page.** A sentence defining
 what a family office *is in general* evidences nothing, and a reader scanning the file reads
-a native-language quote as proof. **No evidencing sentence → leave it empty and say so.**
+a native-language quote as proof. **No evidencing sentence → leave it empty and say so.** A row with no `key_quote`, or with `provenance` *source NOT fetched*, is never a match: `store.py` leaves `matches_request` blank and `finish` lists it under `no_quote_or_not_fetched`. Fetch the firm's own page before you judge it.
 *"Original language" means the language of the page you read*, not of the country.
 
 ### `sources.csv` — one row per citation
@@ -1193,6 +1198,14 @@ name,reason,note,first_seen,source_url
 | `outOfScopeSovereign` | sovereign or state parent | no — **terminal** |
 | `namedFamilyNotFirm` | a capital pool named only as "the X family" | no — terminal unless a vehicle name turns up |
 | `individualNotFirm` | a named angel with no vehicle — a real investor, but one row is one firm | no — terminal |
+| `hqNotPublished` | `noHeadquarters` re-checked on the firm's own site **and** a business registry, and no headquarters is published anywhere; `note` must name what was searched | no — terminal |
+
+**Closing a pending row.** Every resolvable row has a way out that is not `--early`:
+
+- **It is a firm you already hold under another name** (same website) — send it in `investors` with that website. `add` reports it as `already_held` and clears the pending row.
+- **You found the headquarters** — send the firm in `investors`; the row clears.
+- **It is not an investor** — send it in `rejected`.
+- **You re-checked and no headquarters is published** — send it again in `pending` with reason `hqNotPublished` and a `note` naming the pages and registry you searched. `add` moves the row; it stays in the file and the report.
 
 **Gate 1 counts only the resolvable reasons.** Terminal rows stay in the file and in the report, but never hold a run open — `store.py status` shows them apart as `pending` versus `pending_open`. **`finish --early` takes only `user` or `blocker: …`** — never use it to get past a gate.
 
