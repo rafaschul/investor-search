@@ -64,12 +64,18 @@ MIN_SURFACES = 3
 BACKSTOP = 60
 
 
-TERMINAL_PENDING = {"outOfCountry", "outOfScopeSovereign", "namedFamilyNotFirm", "individualNotFirm"}
+TERMINAL_PENDING = {"outOfCountry", "outOfScopeSovereign", "namedFamilyNotFirm", "individualNotFirm",
+                    "hqNotPublished"}
 ACTIVE_MINUTES = 15
 ADVISER_HINTS = ("advisory", "advisor", "adviser", "consulting", "consultancy", "multi family office",
                  "multi-family office", "wealth management", "our clients", "for clients",
                  "catering to", "serves families", "services for families")
 PLACEHOLDERS = {"—", "–", "-", "n/a", "na", "none", "null", "not found", "not available"}
+
+
+def unproven(r):
+    """No evidencing quote, or the firm's page was never read: Job 0 has not run on this row."""
+    return not str(r.get("key_quote") or "").strip() or "not fetched" in str(r.get("provenance") or "").lower()
 
 
 def fold(name):
@@ -349,7 +355,7 @@ def cmd_add(a):
             for c in INVESTOR_COLS[2:]:
                 if str(r.get(c, "")).strip().lower() in PLACEHOLDERS:
                     r[c] = ""
-            if r.get("investor_evidence") in ("", "unclear") and r.get("matches_request") == "yes":
+            if r.get("matches_request") == "yes" and (r.get("investor_evidence") in ("", "unclear") or unproven(r)):
                 r["matches_request"] = ""
         by_domain = {domain(r.get("website")): r["id"] for r in inv if r.get("website")}
         by_key = {fold(r["name"]): r for r in inv}
@@ -360,6 +366,7 @@ def cmd_add(a):
         ids = [int(m.group(1)) for r in inv if (m := re.match(r"f-(\d+)$", r.get("id", "")))]
         nxt = max(ids) + 1 if ids else 1
         refmap = {r["id"]: r["id"] for r in inv}
+        alias_keys = set()
         survived = 0
         for x in batch.get("rejected", []):
             k = fold(x.get("name"))
@@ -387,6 +394,7 @@ def cmd_add(a):
                 continue
             if held:
                 report["already_held"].append(f"{name} = {held}")
+                alias_keys.add(k)  # an alias of a held firm clears its pending row
                 existing = next(x for x in inv if x["id"] == held)
                 for c in INVESTOR_COLS[1:]:  # enrich blanks only, never overwrite
                     if not existing.get(c) and r.get(c) not in (None, ""):
@@ -403,6 +411,10 @@ def cmd_add(a):
                 row["matches_request"] = ""
                 report.setdefault("warnings", []).append(
                     f"{name}: matches_request left blank - investor evidence is unclear")
+            if row.get("matches_request") == "yes" and unproven(row):
+                row["matches_request"] = ""
+                report.setdefault("warnings", []).append(
+                    f"{name}: matches_request left blank - no key_quote, or the source was not fetched")
             if k in by_key and d:
                 row["fold_conflict"] = row.get("fold_conflict") or by_key[k]["name"]
                 report["fold_conflicts"].append(f"{name} vs {by_key[k]['name']}")
@@ -434,12 +446,23 @@ def cmd_add(a):
                 continue
             src.append({"id": rid, "field": s.get("field", ""), "rung": s.get("rung", ""), "url": s["url"]})
             report["sources_added"] += 1
-        held_keys = set(by_key)
+        held_keys = set(by_key) | alias_keys
         report["pending_resolved"] = [p["name"] for p in pen if fold(p["name"]) in held_keys]
         pen = [p for p in pen if fold(p["name"]) not in held_keys]
         for p in batch.get("pending", []):
             k = fold(p.get("name"))
-            if not k or k in held_keys or k in rej_keys or any(fold(x["name"]) == k for x in pen):
+            if not k or k in held_keys or k in rej_keys:
+                continue
+            same = next((x for x in pen if fold(x["name"]) == k), None)
+            if same is not None:  # a re-check may move a row to a new reason, with a note saying what was searched
+                new_reason = p.get("reason", "")
+                if new_reason and new_reason != same["reason"]:
+                    if new_reason == "hqNotPublished" and not (p.get("note") or "").strip():
+                        report["errors"].append(f"{p['name']}: hqNotPublished needs a note naming what was searched")
+                        continue
+                    same.update({"reason": new_reason, "note": p.get("note") or same["note"],
+                                 "source_url": p.get("source_url") or same["source_url"]})
+                    report.setdefault("pending_updated", []).append(f"{p['name']} -> {new_reason}")
                 continue
             pen.append({"name": p["name"], "reason": p.get("reason", ""), "note": p.get("note", ""),
                         "first_seen": p.get("first_seen") or TODAY, "source_url": p.get("source_url", "")})
@@ -516,6 +539,7 @@ def cmd_finish(a):
             "headquarters_partial": [r["name"] for r in inv if r.get("headquarters_partial") == "yes"],
             "no_person": [r["name"] for r in inv if not r.get("person")],
             "evidence_unclear": [r["name"] for r in inv if r.get("investor_evidence") in ("", "unclear")],
+            "no_quote_or_not_fetched": [r["name"] for r in inv if unproven(r)],
             "stray_files_in_working_dir": sorted(f.name for f in Path.cwd().glob("*round*.json")),
         },
         "citations": len(read_rows(folder / "sources.csv")),
