@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.7
+version: 1.1.8
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -67,7 +67,8 @@ python3 "$S" init    --root <root> --market <market>                     # start
 python3 "$S" status  --root <root> --market <market>                     # what is held
 python3 "$S" add     --root <root> --market <market> <<'JSON'            # after EVERY round
 {"investors": [...], "sources": [...], "pending": [...], "rejected": [...],
- "round": {"query": "...", "surface": "...", "offered": 4, "fetch_failed": false}}
+ "round": {"query": "...", "surface": "...", "offered": 4, "fetch_failed": false,
+           "seen": ["<result URL> | <what it is, why not a new investor>", "..."]}}
 JSON
 python3 "$S" finish  --root <root> --market <market>     # before ending; exit 4 = keep searching
 python3 "$S" deliver --root <root> --market <market> --out <folder>     # the ONE file for the user
@@ -285,7 +286,7 @@ id,name,type,investor_evidence,matches_request,website,headquarters,headquarters
 sources.csv             id,field,rung,url
 investors-pending.csv   name,reason,note,first_seen,source_url
 investors-rejected.csv  name,reason,evidence,checked,source_url
-rounds.csv              round,query,surface,offered,survived,dry_streak,fetch_failed,at
+rounds.csv              round,query,surface,offered,survived,dry_streak,fetch_failed,at,proof,seen,seen_notes
 ledger.txt              #LEDGER v2 market=<market> date=<ISO>
                         #SCOPE <the scope line from index.md>
                         key|name|domain|status
@@ -564,7 +565,7 @@ line (`store.py add` refuses the batch with exit 5 and writes nothing; resend ea
 - **Checking a firm you already have is a verification pass, not a round** — it gets no
   `round` line and does not count against the budget.
 - **Log each round with `store.py add`** — it writes `rounds.csv`
-  (`round,query,surface,offered,survived,dry_streak,fetch_failed,at`) and computes the streak.
+  (`round,query,surface,offered,survived,dry_streak,fetch_failed,at,proof,seen,seen_notes`) and computes the streak.
   Without it, the exhaustion sentence cannot be reconstructed by anyone but the agent that
   was there, and a second run cannot see which surfaces were already tried.
 
@@ -1235,7 +1236,7 @@ made, not to suppress the name forever.
 ### `rounds.csv` — what was tried
 
 ```
-round,query,surface,offered,survived,dry_streak,fetch_failed,at
+round,query,surface,offered,survived,dry_streak,fetch_failed,at,proof,seen,seen_notes
 ```
 
 `rounds.csv` is Gate 2's entire input, and it tells the next run which surfaces were already
@@ -1255,6 +1256,8 @@ could license the exhaustion sentence — see Gate 0.
 
 Format, what may be trusted in a pasted one, the rule for scope changes, and how to print a
 long CSV into a chat in numbered parts: **`references/environment.md`**.
+
+**A dry round needs proof.** Every `round` lists in `seen` the result URLs the search actually returned, each as `URL | note`: what the page is and why it is not a new investor ("law firm article", "already f-004", "rejected: bank", "not a family office: ministry page"). A round that found nothing new counts towards the stop rule only if `seen` holds at least three noted URLs no earlier round listed; otherwise `add` warns, the dry streak does not grow, and `finish` keeps saying keep searching. If a result names a firm that could be a new investor, it is not dry: `add` it or put it in `pending`. A `site:` query counts as that surface only if its URLs are on that site; if the search ignored `site:`, the round counts as open web. Never log a round you did not run: an empty round logged without searching is the fastest way to an incomplete list.
 
 ## Report when you finish
 
