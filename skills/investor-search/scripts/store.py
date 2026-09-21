@@ -52,7 +52,7 @@ FILES = {
     "investors-pending.csv": ["name", "reason", "note", "first_seen", "source_url"],
     "investors-rejected.csv": ["name", "reason", "evidence", "checked", "source_url"],
     "rounds.csv": ["round", "query", "surface", "offered", "survived", "dry_streak", "fetch_failed",
-                   "at"],
+                   "at", "proof", "seen", "seen_notes"],
 }
 BOM_FILES = {"investors.csv"}
 LEGAL = {"gmbh", "ag", "kg", "og", "mbh", "co", "ltd", "llc", "inc", "sa", "sarl", "bv", "nv",
@@ -60,6 +60,7 @@ LEGAL = {"gmbh", "ag", "kg", "og", "mbh", "co", "ltd", "llc", "inc", "sa", "sarl
          "privatstiftung", "stiftung", "holding", "group", "the"}
 TODAY = dt.date.today().isoformat()
 DRY_ROUNDS = 6
+MIN_SEEN_NEW = 3          # a dry round must list this many new result URLs, each with a note
 MIN_SURFACES = 3
 BACKSTOP = 60
 
@@ -216,6 +217,8 @@ def gates(folder, pending, rounds, state):
         "gate1_pending_empty": pending == 0,
         "gate2_dry_streak": bool(streak) and (int(rounds[-1]["dry_streak"]) if rounds else 0) >= DRY_ROUNDS,
         "gate2_surfaces_in_streak": len({r.get("surface", "") for r in streak}) >= MIN_SURFACES,
+        "gate2_streak_proven": bool(streak) and not any(
+            str(r.get("proof", "")) == "missing" for r in streak),
         "gate3_no_failed_fetch_in_streak": bool(streak) and not any(
             str(r.get("fetch_failed", "")).lower() in ("true", "1", "yes") for r in streak),
     }
@@ -472,11 +475,51 @@ def cmd_add(a):
             n = len(rnd) + 1
             prev = int(rnd[-1]["dry_streak"]) if rnd else 0
             surv = survived if r.get("survived") in (None, "") else int(r["survived"])
-            rnd.append({"round": n, "query": r.get("query", ""), "surface": r.get("surface", ""),
+            raw = r.get("seen") or []
+            if isinstance(raw, str):
+                raw = [x for x in raw.split("\n")] if "\n" in raw else raw.split()
+            seen, notes = [], {}
+            for x in raw:
+                if isinstance(x, dict):
+                    u, note = str(x.get("url", "")).strip(), str(x.get("note", "")).strip()
+                else:
+                    u, _, note = str(x).partition("|")
+                    u, note = u.strip(), note.strip()
+                    if " " in u:
+                        u, _, more = u.partition(" ")
+                        note = (more.strip() + " " + note).strip()
+                if u.startswith("http"):
+                    seen.append(u)
+                    notes.setdefault(u, note)
+            earlier = {u for row in rnd for u in str(row.get("seen") or "").split()}
+            fresh = [u for u in dict.fromkeys(seen) if u not in earlier]
+            noted = [u for u in fresh if len(notes.get(u, "")) >= 3]
+            surface = r.get("surface", "")
+            site = re.search(r"site:([A-Za-z0-9.-]+)", str(r.get("query", "")))
+            if site and not surv and fresh:
+                dom = site.group(1).lower().lstrip(".")
+                domain_of = lambda u: re.sub(r"^https?://", "", u).split("/")[0].split(":")[0].lower()
+                if not any(domain_of(u) == dom or domain_of(u).endswith("." + dom) for u in fresh):
+                    report.setdefault("warnings", []).append(
+                        f"round {n}: the query says site:{dom} but no URL in 'seen' is on {dom} - "
+                        f"that surface was not searched, so this round counts as 'open web'. "
+                        f"Search {dom} another way (fetch its search or list page) to count it.")
+                    surface = "open web"
+            proof = "ok" if surv or r.get("fetch_failed") or len(noted) >= MIN_SEEN_NEW else "missing"
+            if proof == "missing":
+                report.setdefault("warnings", []).append(
+                    f"round {n} does not count as dry: a dry round needs 'seen' with at least "
+                    f"{MIN_SEEN_NEW} result URLs the search returned that no earlier round listed, "
+                    f"each with a note saying what it is and why it is not a new investor "
+                    f"(got {len(noted)}). A URL that may name a new investor goes to 'add' or "
+                    f"'pending', and then the round is not dry.")
+            rnd.append({"round": n, "query": r.get("query", ""), "surface": surface,
                         "offered": r.get("offered", ""), "survived": surv,
                         "fetch_failed": "true" if r.get("fetch_failed") else "",
                         "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "dry_streak": 0 if surv else prev + 1})
+                        "proof": proof, "seen": " ".join(seen),
+                        "seen_notes": " || ".join(f"{u} | {notes.get(u, '')}" for u in dict.fromkeys(seen)),
+                        "dry_streak": 0 if surv else (prev + 1 if proof == "ok" else prev)})
             report["round"] = n
             report["dry_streak"] = rnd[-1]["dry_streak"]
         # guard: nothing on disk may shrink
