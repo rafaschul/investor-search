@@ -1,7 +1,7 @@
 ---
 name: investor-search
 description: Sourced investor lists for any market, honest on coverage.
-version: 1.1.8
+version: 1.1.9
 author: Rafael Schultz (@rafaschul), Fahad Farooq (@chainleo)
 license: MIT-0
 metadata:
@@ -1260,6 +1260,8 @@ long CSV into a chat in numbered parts: **`references/environment.md`**.
 **A dry round needs proof.** Every `round` lists in `seen` the result URLs the search actually returned, each as `URL | note`: what the page is and why it is not a new investor ("law firm article", "already f-004", "rejected: bank", "not a family office: ministry page"). A round that found nothing new counts towards the stop rule only if `seen` holds at least three noted URLs no earlier round listed; otherwise `add` warns, the dry streak does not grow, and `finish` keeps saying keep searching. If a result names a firm that could be a new investor, it is not dry: `add` it or put it in `pending`. A `site:` query counts as that surface only if its URLs are on that site; if the search ignored `site:`, the round counts as open web. Never log a round you did not run: an empty round logged without searching is the fastest way to an incomplete list.
 
 ## Report when you finish
+
+**Family offices are always two numbers:** *proven* (a page says the firm is a family office) and *likely* (only its name or a register entry says so). Take both from `finish` (`family_offices`) and never add them into one number. The Excel file marks each row in `family_office_proof`.
 
 **Take every number from `store.py finish`**, never from the conversation — and write the
 report only after `finish` exits 0. The report is not

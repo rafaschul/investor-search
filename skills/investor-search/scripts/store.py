@@ -79,6 +79,36 @@ def unproven(r):
     return not str(r.get("key_quote") or "").strip() or "not fetched" in str(r.get("provenance") or "").lower()
 
 
+FO_WORDS = ("family office", "family-office", "familyoffice", "familienbüro", "familienbuero",
+            "single family", "single-family", "familien-office", "family investment office")
+OWN_CAPITAL = ("private investment office", "own capital", "own money", "family capital", "family wealth",
+               "eigene kapital", "eigenes kapital", "eigene vermögen", "eigenes vermögen", "privates kapital",
+               "private capital of the family", "familienvermögen")
+
+
+def fo_proof(r):
+    """'' unless type is family_office; 'proven' when the quote (minus the firm's own name) says
+    family office; 'likely' when only the name or a register entry says so."""
+    if r.get("type") != "family_office":
+        return ""
+    full = str(r.get("key_quote") or "").lower()
+    own_site = bool(r.get("website")) and domain(r.get("key_quote_url")) == domain(r.get("website"))
+    if own_site and any(w in full for w in FO_WORDS + OWN_CAPITAL):
+        return "proven"          # the firm describes itself on its own website
+    quote = full
+    for part in (str(r.get("name") or "").lower(), str(r.get("formerly") or "").lower()):
+        if part:
+            quote = quote.replace(part, " ")
+    return "proven" if any(w in quote for w in FO_WORDS + OWN_CAPITAL) else "likely"
+
+
+def fo_counts(inv):
+    likely = [r["name"] for r in inv if fo_proof(r) == "likely"]
+    proven = sum(1 for r in inv if fo_proof(r) == "proven")
+    return {"proven": proven, "likely_name_or_register_only": len(likely), "likely_names": likely,
+            "report_rule": "Report these as two numbers. Never add likely family offices to the proven count."}
+
+
 def fold(name):
     s = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
     words = [w for w in re.split(r"[^a-z0-9]+", s) if w]
@@ -166,8 +196,46 @@ def uploaded_ledger(folder):
     for p in sorted(folder.glob("ledger-uploaded*.txt")):
         for line in p.read_text(encoding="utf-8-sig").splitlines():
             parts = line.split("|")
-            if len(parts) == 4 and not line.startswith(("#", "key|")):
+            if line.startswith(("#", "key|")) or not line.strip():
+                continue
+            if len(parts) == 4:
                 out.add((parts[0].strip(), parts[2].strip()))
+            else:  # a malformed row must not be dropped in silence: it means a duplicate later
+                msg = f"ledger line skipped ({len(parts)} fields, expected 4): {line[:90]}"
+                LEDGER_WARNINGS.append(msg)
+                sys.stderr.write(msg + "\n")
+    return out
+
+
+# --- ledger: a "|" inside a name broke the row into 5 fields, so a later run read the
+# --- wrong domain and the firm came back as a duplicate. Found in a real Austria run:
+# --- "fresh minds|FRESH|MINDS Holding GmbH|freshminds-holding.at|ok"
+LEDGER_WARNINGS = []
+
+
+def led_cell(v):
+    """One ledger field: never contains the separator, never a newline."""
+    return str(v or "").replace("|", "/").replace("\n", " ").replace("\r", " ").strip()
+
+
+def uploaded_ledger_rows(folder):
+    """(key, name, domain, status) from ledgers the user brought back.
+    Without these, a rejected firm is forgotten on the run after next: run 2 skips it from the
+    uploaded file, but the ledger run 2 writes does not carry it, so run 3 adds it as a new firm."""
+    out = {}
+    for p in sorted(folder.glob("ledger-uploaded*.txt")):
+        try:
+            text = p.read_text(encoding="utf-8-sig")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if line.startswith(("#", "key|")) or not line.strip():
+                continue
+            parts = line.split("|")
+            if len(parts) == 4:
+                k = parts[0].strip()
+                if k:
+                    out[k] = (k, parts[1].strip(), parts[2].strip(), parts[3].strip())
     return out
 
 
@@ -177,11 +245,16 @@ def rebuild(root, folder, market, scope):
     rej = read_rows(folder / "investors-rejected.csv")
     lines = [f"#LEDGER v2 market={market} date={TODAY}", f"#SCOPE {scope}", "key|name|domain|status"]
     for r in inv:
-        lines.append(f"{fold(r['name'])}|{r['name']}|{domain(r.get('website'))}|ok")
+        lines.append(f"{led_cell(fold(r['name']))}|{led_cell(r['name'])}|{led_cell(domain(r.get('website')))}|ok")
     for r in pen:
-        lines.append(f"{fold(r['name'])}|{r['name']}||pending")
+        lines.append(f"{led_cell(fold(r['name']))}|{led_cell(r['name'])}||pending")
     for r in rej:  # names of rejected firms never travel
-        lines.append(f"{fold(r['name'])}|—|{domain(r.get('source_url'))}|rejected")
+        lines.append(f"{led_cell(fold(r['name']))}|—|{led_cell(domain(r.get('source_url')))}|rejected")
+    # carry forward what an uploaded ledger already decided, so tier B does not forget it
+    have = {l.split("|")[0] for l in lines[3:]}
+    for k, (key, nm, dom, st) in sorted(uploaded_ledger_rows(folder).items()):
+        if k not in have and st in ("rejected", "pending", "ok"):
+            lines.append(f"{led_cell(key)}|{led_cell(nm)}|{led_cell(dom)}|{st}")
     lines.append(f"#END rows={len(lines) - 3}")
     (folder / "ledger.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     # index.md: one row per market of THIS root only
@@ -414,6 +487,21 @@ def cmd_add(a):
                 row["matches_request"] = ""
                 report.setdefault("warnings", []).append(
                     f"{name}: matches_request left blank - investor evidence is unclear")
+            if not str(row.get("matches_request") or "").strip():
+                report.setdefault("warnings", []).append(
+                    f"{name}: matches_request is blank - every row must be yes or no against the "
+                    "population the user named")
+            _nm = str(row.get("name") or "").lower()
+            if (("stiftung" in _nm or "stichting" in _nm)
+                    and str(row.get("investor_evidence") or "").strip() == "invests"
+                    and str(row.get("type") or "").strip() in ("", "unknown")):
+                report.setdefault("warnings", []).append(
+                    f"{name}: a family foundation whose evidence says it invests is a family_office "
+                    "(likely at least), not 'unknown'")
+            if fo_proof(row) == "likely":
+                report.setdefault("warnings", []).append(
+                    f"{name}: family_office rests on the name or a register entry only - counted as 'likely', "
+                    "not as a proven family office; look for a page that says it")
             if row.get("matches_request") == "yes" and unproven(row):
                 row["matches_request"] = ""
                 report.setdefault("warnings", []).append(
@@ -537,6 +625,9 @@ def cmd_add(a):
             (folder / ".run.json").write_text(json.dumps(state), encoding="utf-8")
         rebuild(a.root, folder, market, scope_of(folder))
         st = status(folder, market)
+        if LEDGER_WARNINGS:
+            report.setdefault("warnings", []).extend(LEDGER_WARNINGS)
+        report["family_offices"] = fo_counts(inv)
         report.update({k: st[k] for k in ("firms", "pending", "rejected_count", "rounds", "next_id",
                                           "rounds_this_run", "round_limit", "stop_allowed", "stop_reason")})
         print(json.dumps(report, ensure_ascii=False, indent=1))
@@ -574,6 +665,7 @@ def cmd_finish(a):
         "kept_this_run": sum(int(r["survived"] or 0) for r in rounds),
         "pending": st["pending"], "rejected_count": st["rejected_count"],
         "type": count("type"), "evidence": count("investor_evidence"),
+        "family_offices": fo_counts(inv),
         "matches_request": count("matches_request"),
         "flags": {
             "operating_group": [r["name"] for r in inv if r.get("investor_evidence") == "operating_group"],
@@ -657,8 +749,10 @@ def cmd_deliver(a):
     links = {}
     for s in src:
         links.setdefault(s["id"], []).append(f"{s['field']}: {s['url']}")
-    head = INVESTOR_COLS + ["source_links"]
-    rows = [head] + [[r.get(c, "") for c in INVESTOR_COLS] + ["\n".join(links.get(r["id"], []))] for r in inv]
+    head = INVESTOR_COLS + ["family_office_proof", "source_links"]
+    rows = [head] + [[r.get(c, "") for c in INVESTOR_COLS]
+                     + [{"proven": "proven", "likely": "likely: name or register only"}.get(fo_proof(r), ""),
+                        "\n".join(links.get(r["id"], []))] for r in inv]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{market}-investors.xlsx"
@@ -671,6 +765,7 @@ def cmd_deliver(a):
                  ("Pending", sheet("investors-pending.csv")), ("Rounds", sheet("rounds.csv")),
                  ("Ledger", [["ledger"]] + [[line] for line in (folder / "ledger.txt").read_text(encoding="utf-8").splitlines()])])
     print(json.dumps({"file": str(path.resolve()), "firms": len(inv), "citations": len(src),
+                      "family_offices": fo_counts(inv),
                       "send_with": f"MEDIA:{path.resolve()}"}, indent=1))
 
 
@@ -716,6 +811,10 @@ def _read_xlsx(path):
 def cmd_import(a):
     folder, market = market_dir(a.root, a.market)
     src_dir = Path(getattr(a, "from"))
+    if src_dir.is_file() and src_dir.suffix == ".txt":  # a ledger handed over on its own
+        _t = Path(tempfile.mkdtemp())
+        (_t / "ledger.txt").write_text(src_dir.read_text(encoding="utf-8-sig"), encoding="utf-8")
+        src_dir = _t
     books = sorted(src_dir.glob("*.xlsx")) if src_dir.is_dir() else ([src_dir] if src_dir.suffix == ".xlsx" else [])
     if books:  # the single file this skill hands over: unpack it to CSVs, then import as usual
         tmp = Path(tempfile.mkdtemp())
